@@ -50,7 +50,7 @@ import json
 import re
 
 # e.g. https://github.com/some-user/repo-name.git@61030e628fa5d6ea49ee9bb70638d5f7125a7f82
-git_re = re.compile(r'^(?P<url>https://(?P<host>.+)/(?P<owner>.+)/(?P<repo>.+)\.git)(?:\@(?P<revision>.*))?$')
+git_re = re.compile(r'^(?P<url>https://(?P<host>[^/]+)/(?P<owner>[^/]+)/(?P<repo>[^\@]+?)(?:\.git)?)(?:\@(?P<revision>.*))?$')
 
 def _gh_part(url, part_name):
     match = git_re.match(url)
