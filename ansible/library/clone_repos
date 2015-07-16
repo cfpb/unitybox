@@ -35,8 +35,8 @@ EXAMPLES = '''
 # Clone both the Spoon-Knife and the hellogitworld repos
 - clone_repos: 
     urls: 
-      - https://github.com/octocat/Spoon-Knife.git
-      - https://github.com/githubtraining/hellogitworld.git
+      - https://github.com/octocat/Spoon-Knife.git@d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9
+      - https://github.com/githubtraining/hellogitworld.git@RELEASE_1.1
     processes: 5
     install_dir: /path/to/directory
     ensure_pinned: True
