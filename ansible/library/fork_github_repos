@@ -1,0 +1,126 @@
+#!/usr/bin/python
+DOCUMENTATION = '''
+---
+module: fork_github_repos
+author: Daniel Davis
+version_added: n/a
+short_description: sends requests to GitHub to fork a list of repos in parallel
+requirements: [requests]
+description: 
+  - All requests are submitted using a processing pool rather than firing each request sequentially
+  - First sends a request to determine if a given repo already has a fork
+  - If no fork exists, sends a POST request to GitHub to create one
+options: 
+  urls: 
+    required: true
+    description: 
+      - a list of github repos you want to fork. 
+  processes: 
+    required: false
+    default: 10
+    description:
+      - The maximum size of the process pool (i.e. maximum number of workers)
+  scm: 
+    required: true
+    description:
+      - a dictionary matching hosts (i.e. github) to credentials (user, password, etc). Must contain the following fields:
+        - user: the account you want to create a fork for
+        - password: the personal access token for the account
+        - api: the url of the GitHub api (since the version may vary)
+'''
+
+EXAMPLES = '''
+# Fork both the Spoon-Knife and the hellogitworld repos
+- fork_github_repos: 
+        urls: 
+          - https://github.com/octocat/Spoon-Knife.git
+          - https://github.com/githubtraining/hellogitworld.git
+        scm: 
+          github.com:
+            api: https://api.github.com
+            user: my-user
+            password: my-password
+        processes: 5
+'''
+
+import requests
+import ast
+from multiprocessing import Pool
+import json
+import re
+
+# e.g. https://github.com/some-user/repo-name.git@61030e628fa5d6ea49ee9bb70638d5f7125a7f82
+git_re = re.compile(r'^(?P<url>https://(?P<host>.+)/(?P<owner>.+)/(?P<repo>.+)\.git)(?:\@(?P<revision>.*))?$')
+
+def _gh_part(url, part_name):
+    match = git_re.match(url)
+    if not match:
+        raise Exception('Not a valid git URL: {}'.format(url))
+    try:
+        return match.group(part_name)
+    except TypeError:
+        raise Exception('No {} in git URL: {}'.format(part_name, url))
+
+def fork_repo(fork_url, user, password, post_url, repo_name):
+    if url_exists(fork_url):
+        return {"repo_name": repo_name, "changed": False}
+    else:
+        return send_request_to_fork_repo(user, password, post_url, repo_name)
+
+def send_request_to_fork_repo(user, password, url, repo_name):
+    r = requests.post(url, data=json.dumps({"owner": user}), auth=(user, password))
+    if r.status_code == 202: # accepted
+        return {"repo_name": repo_name, "changed": True}
+    else: 
+        raise Exception('Attempt to fork repo {0} at {1} failed with status code {2} and error message {3}'.format(repo_name, url, r.status_code, r.text))
+
+def url_exists(url):
+    r = requests.head(url)
+    return r.status_code == 200 or r.status_code == 301
+
+def get_fork_url(gh_api_url, user, repo_name):
+    return "{0}/repos/{1}/{2}".format(gh_api_url, user, repo_name)
+
+def get_api_url(gh_api_url, owner, repo_name):
+    return "{0}/repos/{1}/{2}/forks".format(gh_api_url, owner, repo_name)
+
+def fork_repos(urls, pool, scm):
+    workers = []
+    for url in urls:
+        host        = _gh_part(url, 'host')
+        user        = scm[host]['user']
+        password    = scm[host]['password']
+        gh_api_url  = scm[host]['api']
+        repo_name   = _gh_part(url, 'repo')
+        fork_url    = get_fork_url(gh_api_url, user, repo_name)
+        post_url    = get_api_url(gh_api_url, _gh_part(url, 'owner'), repo_name)
+        workers.append(pool.apply_async(fork_repo, (fork_url, user, password, post_url, repo_name)))
+
+    pool.close()  # don't accept any more new workers
+    pool.join()
+
+    changed = any([result.get()['changed'] for result in workers])
+    results = [result.get() for result in workers]
+    return results, changed
+
+def main():
+    module = AnsibleModule(
+        argument_spec = dict(
+            urls=dict(required=True),
+            processes=dict(default=10, type='int'),
+            scm=dict(required=True),
+        )
+    )
+    urls = module.params['urls']
+    processes = module.params['processes']
+    scm = module.params['scm']
+    
+    pool = Pool(processes=processes)
+    
+    results, changed = fork_repos(urls, pool, scm)
+    module.exit_json(changed=changed, rc=0, repo_fork_status=results)
+
+from ansible.module_utils.basic import *
+
+if __name__ == '__main__':
+    main()
