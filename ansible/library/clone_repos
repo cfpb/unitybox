@@ -109,7 +109,7 @@ def update_repo(module, url, dest, tag):
 	cmd = "git remote set-url origin {0}".format(url)
 	run_command_with_exceptions(module, cmd, cwd=dest)
 	
-	cmd = "git fetch origin master"
+	cmd = "git fetch origin master --tags"
 	run_command_with_exceptions(module, cmd, cwd=dest)
 
 	cmd = "git checkout {0} --force".format(tag)
